@@ -138,6 +138,7 @@ function M.create(port, auth_token, config)
 
   local write_ok, write_err = pcall(function()
     file:write(json)
+    file:flush()
     file:close()
   end)
 

@@ -249,7 +249,6 @@ function M.process_mention_queue(from_new_connection)
   end
 end
 
-
 ---Send @ mention to Claude Code, handling connection state automatically
 ---@param file_path string The file path to send
 ---@param start_line number|nil Start line (0-indexed for Claude)
@@ -457,6 +456,40 @@ function M.stop()
   return true
 end
 
+---Restart the Claude Code integration
+---@param show_notification? boolean Whether to show notifications (defaults to true)
+---@return boolean success Whether the operation was successful
+---@return number|string port_or_error The WebSocket port if successful, or error message if failed
+function M.restart(show_notification)
+  if show_notification == nil then
+    show_notification = true
+  end
+
+  if show_notification then
+    logger.info("init", "Restarting Claude Code integration...")
+  end
+
+  -- Stop if currently running
+  if M.state.server then
+    local stop_success, stop_error = M.stop()
+    if not stop_success then
+      local error_msg = "Failed to stop during restart: " .. (stop_error or "unknown error")
+      logger.error("init", error_msg)
+      return false, error_msg
+    end
+  end
+
+  -- Small delay to ensure clean shutdown
+  vim.defer_fn(function()
+    local start_success, start_result = M.start(show_notification)
+    if start_success and show_notification then
+      logger.info("init", "Claude Code integration restarted successfully on port " .. tostring(start_result))
+    end
+  end, 100)
+
+  return true, "Restarting..."
+end
+
 ---Set up user commands
 ---@private
 function M._create_commands()
@@ -470,6 +503,12 @@ function M._create_commands()
     M.stop()
   end, {
     desc = "Stop Claude Code integration",
+  })
+
+  vim.api.nvim_create_user_command("ClaudeCodeRestart", function()
+    M.restart()
+  end, {
+    desc = "Restart Claude Code integration",
   })
 
   vim.api.nvim_create_user_command("ClaudeCodeStatus", function()
@@ -971,7 +1010,10 @@ M.open_with_model = function(additional_args)
       return
     end
 
-    logger.info("command", "Selected model: " .. choice.value .. ". Please launch Claude CLI manually with --model " .. choice.value)
+    logger.info(
+      "command",
+      "Selected model: " .. choice.value .. ". Please launch Claude CLI manually with --model " .. choice.value
+    )
   end)
 end
 
@@ -1242,10 +1284,10 @@ function M._debug_state()
         auto_start = M.state.config.auto_start,
         track_selection = M.state.config.track_selection,
         log_level = M.state.config.log_level,
-      } or nil
+      } or nil,
     },
     server = M.state.server and M.state.server._debug_state and M.state.server._debug_state() or "Not running",
-    connection_status = M.is_claude_connected() and "Connected" or "Disconnected"
+    connection_status = M.is_claude_connected() and "Connected" or "Disconnected",
   }
 end
 
