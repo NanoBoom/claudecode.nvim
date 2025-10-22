@@ -80,4 +80,59 @@ describe("Tool: get_workspace_folders", function()
 
   -- TODO: Add tests when LSP workspace folder integration is implemented in the tool.
   -- This would involve mocking vim.lsp.get_clients() and its return structure.
+
+  describe("with custom workspace_folders_fn", function()
+    before_each(function()
+      -- Mock tools module to return config with custom function
+      package.loaded["claudecode.tools.init"] = nil
+      local tools_module = require("claudecode.tools.init")
+      tools_module.config = {
+        workspace_folders_fn = function(basename)
+          return {"/custom/path/1", "/custom/path/2"}
+        end
+      }
+
+      -- Mock lockfile module to use custom function
+      package.loaded["claudecode.lockfile"] = nil
+      local lockfile_module = require("claudecode.lockfile")
+      lockfile_module.get_workspace_folders = spy.new(function(config)
+        if config and config.workspace_folders_fn then
+          return config.workspace_folders_fn("test")
+        end
+        return {"/default/path"}
+      end)
+    end)
+
+    after_each(function()
+      package.loaded["claudecode.tools.init"] = nil
+      package.loaded["claudecode.lockfile"] = nil
+    end)
+
+    it("should use custom workspace folders when configured", function()
+      local success, result = pcall(get_workspace_folders_handler, {})
+      expect(success).to_be_true()
+      expect(result).to_be_table()
+      expect(result.content).to_be_table()
+
+      local parsed_result = require("tests.busted_setup").json_decode(result.content[1].text)
+      expect(parsed_result.success).to_be_true()
+      expect(parsed_result.folders).to_be_table()
+      expect(#parsed_result.folders).to_be(2)
+
+      local folder1 = parsed_result.folders[1]
+      expect(folder1.name).to_be("1")
+      expect(folder1.uri).to_be("file:///custom/path/1")
+      expect(folder1.path).to_be("/custom/path/1")
+
+      local folder2 = parsed_result.folders[2]
+      expect(folder2.name).to_be("2")
+      expect(folder2.uri).to_be("file:///custom/path/2")
+      expect(folder2.path).to_be("/custom/path/2")
+
+      -- Verify lockfile.get_workspace_folders was called with config
+      assert.spy(require("claudecode.lockfile").get_workspace_folders).was_called_with(
+        require("claudecode.tools.init").config
+      )
+    end)
+  end)
 end)

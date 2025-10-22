@@ -69,10 +69,11 @@ end
 ---Create the lock file for a specified WebSocket port
 ---@param port number The port number for the WebSocket server
 ---@param auth_token? string Optional pre-generated auth token (generates new one if not provided)
+---@param config? table Optional configuration table
 ---@return boolean success Whether the operation was successful
 ---@return string result_or_error The lock file path if successful, or error message if failed
 ---@return string? auth_token The authentication token if successful
-function M.create(port, auth_token)
+function M.create(port, auth_token, config)
   if not port or type(port) ~= "number" then
     return false, "Invalid port number"
   end
@@ -91,7 +92,7 @@ function M.create(port, auth_token)
 
   local lock_path = M.lock_dir .. "/" .. port .. ".lock"
 
-  local workspace_folders = M.get_workspace_folders()
+  local workspace_folders = M.get_workspace_folders(config)
   if not auth_token then
     local auth_success, auth_result = pcall(generate_auth_token)
     if not auth_success then
@@ -178,10 +179,11 @@ end
 
 ---Update the lock file for the given port
 ---@param port number The port number of the WebSocket server
+---@param config? table Optional configuration table
 ---@return boolean success Whether the operation was successful
 ---@return string result_or_error The lock file path if successful, or error message if failed
 ---@return string? auth_token The authentication token if successful
-function M.update(port)
+function M.update(port, config)
   if not port or type(port) ~= "number" then
     return false, "Invalid port number"
   end
@@ -194,7 +196,7 @@ function M.update(port)
     end
   end
 
-  return M.create(port)
+  return M.create(port, nil, config)
 end
 
 ---Read the authentication token from a lock file
@@ -254,9 +256,21 @@ local function get_lsp_clients()
 end
 
 ---Get workspace folders for the lock file
+---@param config? table Optional configuration table
 ---@return table Array of workspace folder paths
-function M.get_workspace_folders()
+function M.get_workspace_folders(config)
   local folders = {}
+
+  -- Use custom workspace folders function if provided
+  if config and config.workspace_folders_fn and type(config.workspace_folders_fn) == "function" then
+    local basename = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
+    local success, result = pcall(config.workspace_folders_fn, basename)
+    if success and type(result) == "table" then
+      for _, folder in ipairs(result) do
+        table.insert(folders, folder)
+      end
+    end
+  end
 
   -- Add current working directory
   table.insert(folders, vim.fn.getcwd())

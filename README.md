@@ -282,6 +282,9 @@ For deep technical details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
       open_in_current_tab = true,
       keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens
     },
+
+    -- Workspace Folders Customization
+    workspace_folders_fn = nil, -- Optional: custom function to compute workspace folders
   },
   keys = {
     -- Your keymaps here

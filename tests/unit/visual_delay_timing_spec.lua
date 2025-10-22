@@ -8,20 +8,12 @@ describe("Visual Delay Timing Validation", function()
   local function setup_mocks()
     package.loaded["claudecode.selection"] = nil
     package.loaded["claudecode.logger"] = nil
-    package.loaded["claudecode.terminal"] = nil
 
     -- Mock logger
     package.loaded["claudecode.logger"] = {
       debug = function() end,
       warn = function() end,
       error = function() end,
-    }
-
-    -- Mock terminal
-    package.loaded["claudecode.terminal"] = {
-      get_active_terminal_bufnr = function()
-        return nil -- No active terminal by default
-      end,
     }
 
     -- Extend the existing vim mock

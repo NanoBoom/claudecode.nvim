@@ -249,29 +249,6 @@ function M.process_mention_queue(from_new_connection)
   end
 end
 
----Show terminal if Claude is connected and it's not already visible
----@return boolean success Whether terminal was shown or was already visible
-function M._ensure_terminal_visible_if_connected()
-  if not M.is_claude_connected() then
-    return false
-  end
-
-  local terminal = require("claudecode.terminal")
-  local active_bufnr = terminal.get_active_terminal_bufnr and terminal.get_active_terminal_bufnr()
-
-  if not active_bufnr then
-    return false
-  end
-
-  local bufinfo = vim.fn.getbufinfo(active_bufnr)[1]
-  local is_visible = bufinfo and #bufinfo.windows > 0
-
-  if not is_visible then
-    terminal.simple_toggle()
-  end
-
-  return true
-end
 
 ---Send @ mention to Claude Code, handling connection state automatically
 ---@param file_path string The file path to send
@@ -288,29 +265,21 @@ function M.send_at_mention(file_path, start_line, end_line, context)
     return false, "Claude Code integration is not running"
   end
 
-  -- Check if Claude Code is connected
   if M.is_claude_connected() then
-    -- Claude is connected, send immediately and ensure terminal is visible
+    -- Claude is connected, send immediately
     local success, error_msg = M._broadcast_at_mention(file_path, start_line, end_line)
-    if success then
-      local terminal = require("claudecode.terminal")
-      if M.state.config and M.state.config.focus_after_send then
-        -- Open focuses the terminal without toggling/hiding if already focused
-        terminal.open()
-      else
-        terminal.ensure_visible()
-      end
-    end
     return success, error_msg
   else
-    -- Claude not connected, queue the mention and launch terminal
+    -- Claude not connected, queue the mention
     queue_mention(file_path, start_line, end_line)
 
-    -- Launch terminal with Claude Code
-    local terminal = require("claudecode.terminal")
-    terminal.open()
-
-    logger.debug(context, "Queued @ mention and launched Claude Code: " .. file_path)
+    logger.warn(
+      context,
+      string.format(
+        "Claude not connected. Queued @ mention: %s. Please ensure Claude CLI is running in an external terminal.",
+        file_path
+      )
+    )
 
     return true, nil
   end
@@ -327,40 +296,6 @@ function M.setup(opts)
   -- vim.g.claudecode_user_config is no longer needed as config values are passed directly.
 
   logger.setup(M.state.config)
-
-  -- Setup terminal module: always try to call setup to pass terminal_cmd and env,
-  -- even if terminal_opts (for split_side etc.) are not provided.
-  -- Map top-level cwd-related aliases into terminal config for convenience
-  do
-    local t = opts.terminal or {}
-    local had_alias = false
-    if opts.git_repo_cwd ~= nil then
-      t.git_repo_cwd = opts.git_repo_cwd
-      had_alias = true
-    end
-    if opts.cwd ~= nil then
-      t.cwd = opts.cwd
-      had_alias = true
-    end
-    if opts.cwd_provider ~= nil then
-      t.cwd_provider = opts.cwd_provider
-      had_alias = true
-    end
-    if had_alias then
-      opts.terminal = t
-    end
-  end
-
-  local terminal_setup_ok, terminal_module = pcall(require, "claudecode.terminal")
-  if terminal_setup_ok then
-    -- Guard in case tests or user replace the module with a minimal stub without `setup`.
-    if type(terminal_module.setup) == "function" then
-      -- terminal_opts might be nil, which the setup function should handle gracefully.
-      terminal_module.setup(opts.terminal, M.state.config.terminal_cmd, M.state.config.env)
-    end
-  else
-    logger.error("init", "Failed to load claudecode.terminal module for setup.")
-  end
 
   local diff = require("claudecode.diff")
   diff.setup(M.state.config)
@@ -441,7 +376,7 @@ function M.start(show_startup_notification)
   M.state.port = tonumber(result)
   M.state.auth_token = auth_token
 
-  local lock_success, lock_result, returned_auth_token = lockfile.create(M.state.port, auth_token)
+  local lock_success, lock_result, returned_auth_token = lockfile.create(M.state.port, auth_token, M.state.config)
 
   if not lock_success then
     server.stop()
@@ -981,52 +916,6 @@ function M._create_commands()
     desc = "Add specified file or directory to Claude Code context with optional line range",
   })
 
-  local terminal_ok, terminal = pcall(require, "claudecode.terminal")
-  if terminal_ok then
-    vim.api.nvim_create_user_command("ClaudeCode", function(opts)
-      local current_mode = vim.fn.mode()
-      if current_mode == "v" or current_mode == "V" or current_mode == "\22" then
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
-      end
-      local cmd_args = opts.args and opts.args ~= "" and opts.args or nil
-      terminal.simple_toggle({}, cmd_args)
-    end, {
-      nargs = "*",
-      desc = "Toggle the Claude Code terminal window (simple show/hide) with optional arguments",
-    })
-
-    vim.api.nvim_create_user_command("ClaudeCodeFocus", function(opts)
-      local current_mode = vim.fn.mode()
-      if current_mode == "v" or current_mode == "V" or current_mode == "\22" then
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
-      end
-      local cmd_args = opts.args and opts.args ~= "" and opts.args or nil
-      terminal.focus_toggle({}, cmd_args)
-    end, {
-      nargs = "*",
-      desc = "Smart focus/toggle Claude Code terminal (switches to terminal if not focused, hides if focused)",
-    })
-
-    vim.api.nvim_create_user_command("ClaudeCodeOpen", function(opts)
-      local cmd_args = opts.args and opts.args ~= "" and opts.args or nil
-      terminal.open({}, cmd_args)
-    end, {
-      nargs = "*",
-      desc = "Open the Claude Code terminal window with optional arguments",
-    })
-
-    vim.api.nvim_create_user_command("ClaudeCodeClose", function()
-      terminal.close()
-    end, {
-      desc = "Close the Claude Code terminal window",
-    })
-  else
-    logger.error(
-      "init",
-      "Terminal module not found. Terminal commands (ClaudeCode, ClaudeCodeOpen, ClaudeCodeClose) not registered."
-    )
-  end
-
   -- Diff management commands
   vim.api.nvim_create_user_command("ClaudeCodeDiffAccept", function()
     local diff = require("claudecode.diff")
@@ -1040,6 +929,14 @@ function M._create_commands()
     diff.deny_current_diff()
   end, {
     desc = "Deny/reject the current diff changes",
+  })
+
+  vim.api.nvim_create_user_command("ClaudeCodeDebugState", function()
+    local debug_info = M._debug_state()
+    logger.info("debug", "Claude Code Debug State:")
+    logger.info("debug", vim.inspect(debug_info))
+  end, {
+    desc = "Show detailed Claude Code debug state information",
   })
 
   vim.api.nvim_create_user_command("ClaudeCodeSelectModel", function(opts)
@@ -1074,9 +971,7 @@ M.open_with_model = function(additional_args)
       return
     end
 
-    local model_arg = "--model " .. choice.value
-    local final_args = additional_args and (model_arg .. " " .. additional_args) or model_arg
-    vim.cmd("ClaudeCode " .. final_args)
+    logger.info("command", "Selected model: " .. choice.value .. ". Please launch Claude CLI manually with --model " .. choice.value)
   end)
 end
 
@@ -1332,6 +1227,26 @@ function M._add_paths_to_claude(file_paths, options)
   end
 
   return success_count, total_count
+end
+
+---Get debug state information for troubleshooting
+---@return table debug_info Debug state information
+function M._debug_state()
+  return {
+    plugin = {
+      initialized = M.state.initialized,
+      port = M.state.port,
+      auth_token = M.state.auth_token and "[REDACTED]" or nil,
+      mention_queue_size = #(M.state.mention_queue or {}),
+      config = M.state.config and {
+        auto_start = M.state.config.auto_start,
+        track_selection = M.state.config.track_selection,
+        log_level = M.state.config.log_level,
+      } or nil
+    },
+    server = M.state.server and M.state.server._debug_state and M.state.server._debug_state() or "Not running",
+    connection_status = M.is_claude_connected() and "Connected" or "Disconnected"
+  }
 end
 
 return M

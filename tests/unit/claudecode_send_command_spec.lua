@@ -13,7 +13,6 @@ describe("ClaudeCodeSend Command Range Functionality", function()
     -- Reset package cache
     package.loaded["claudecode"] = nil
     package.loaded["claudecode.selection"] = nil
-    package.loaded["claudecode.terminal"] = nil
     package.loaded["claudecode.server.init"] = nil
     package.loaded["claudecode.lockfile"] = nil
     package.loaded["claudecode.config"] = nil

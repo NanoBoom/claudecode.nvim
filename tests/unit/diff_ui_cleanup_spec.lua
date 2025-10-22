@@ -66,18 +66,6 @@ describe("Diff UI cleanup behavior", function()
   end)
 
   it("keeps Claude terminal visible in original tab on reject when previously visible", function()
-    -- Spy on terminal.ensure_visible by preloading a stub module
-    local ensure_calls = 0
-    package.loaded["claudecode.terminal"] = {
-      ensure_visible = function()
-        ensure_calls = ensure_calls + 1
-        return true
-      end,
-      get_active_terminal_bufnr = function()
-        return nil
-      end,
-    }
-
     -- Minimal windows/buffers for cleanup paths
     local new_win = 2101
     local target_win = 2102
@@ -103,17 +91,11 @@ describe("Diff UI cleanup behavior", function()
       is_new_file = false,
     })
 
-    -- Mark as rejected and verify no cleanup yet
+    -- Mark as rejected
     diff._resolve_diff_as_rejected(tab_name)
-    assert.equals(0, ensure_calls)
 
     -- Simulate close_tab tool invocation for a pending diff (treated as reject)
     local closed = diff.close_diff_by_tab_name(tab_name)
     assert.is_true(closed)
-    -- ensure_visible should have been called exactly once during cleanup
-    assert.equals(1, ensure_calls)
-
-    -- Clear the stub to avoid side effects for other tests
-    package.loaded["claudecode.terminal"] = nil
   end)
 end)

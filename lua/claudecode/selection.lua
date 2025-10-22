@@ -3,7 +3,6 @@
 local M = {}
 
 local logger = require("claudecode.logger")
-local terminal = require("claudecode.terminal")
 
 M.state = {
   latest_selection = nil,
@@ -130,27 +129,13 @@ function M.update_selection()
 
   -- If the buffer name starts with "✻ [Claude Code]", do not update selection
   if buf_name and string.sub(buf_name, 1, string.len("✻ [Claude Code]")) == "✻ [Claude Code]" then
-    -- Optionally, cancel demotion timer like for the terminal
+    -- Cancel demotion timer if active
     if M.state.demotion_timer then
       M.state.demotion_timer:stop()
       M.state.demotion_timer:close()
       M.state.demotion_timer = nil
     end
     return
-  end
-
-  -- If the current buffer is the Claude terminal, do not update selection
-  if terminal then
-    local claude_term_bufnr = terminal.get_active_terminal_bufnr()
-    if claude_term_bufnr and current_buf == claude_term_bufnr then
-      -- Cancel any pending demotion if we switch to the Claude terminal
-      if M.state.demotion_timer then
-        M.state.demotion_timer:stop()
-        M.state.demotion_timer:close()
-        M.state.demotion_timer = nil
-      end
-      return
-    end
   end
 
   local current_mode_info = vim.api.nvim_get_mode()
@@ -250,24 +235,9 @@ function M.handle_selection_demotion(original_bufnr_when_scheduled)
   -- M.state.demotion_timer should be nil here if it fired normally or was cancelled.
 
   local current_buf = vim.api.nvim_get_current_buf()
-  local claude_term_bufnr = terminal.get_active_terminal_bufnr()
-
-  -- Condition 1: Switched to Claude Terminal
-  if claude_term_bufnr and current_buf == claude_term_bufnr then
-    -- Visual selection is preserved (M.state.latest_selection is still the visual one).
-    -- The "pending" status of last_active_visual_selection is resolved.
-    if
-      M.state.last_active_visual_selection
-      and M.state.last_active_visual_selection.bufnr == original_bufnr_when_scheduled
-    then
-      M.state.last_active_visual_selection = nil
-    end
-    return
-  end
-
   local current_mode_info = vim.api.nvim_get_mode()
 
-  -- Condition 2: Back in Visual Mode in the Original Buffer
+  -- Condition 1: Back in Visual Mode in the Original Buffer
   if
     current_buf == original_bufnr_when_scheduled
     and (current_mode_info.mode == "v" or current_mode_info.mode == "V" or current_mode_info.mode == "\022")
@@ -282,7 +252,7 @@ function M.handle_selection_demotion(original_bufnr_when_scheduled)
     return
   end
 
-  -- Condition 3: Still in Original Buffer & Not Visual & Not Claude Term -> Demote
+  -- Condition 2: Still in Original Buffer & Not Visual -> Demote
   if current_buf == original_bufnr_when_scheduled then
     local new_sel_for_demotion = M.get_cursor_position()
     -- Check if this new cursor position is actually different from the (visual) latest_selection

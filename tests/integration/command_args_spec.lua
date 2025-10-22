@@ -148,14 +148,12 @@ describe("ClaudeCode command arguments integration", function()
             return vim.tbl_deep_extend("force", {
               port_range = { min = 10000, max = 65535 },
               auto_start = false,
-              terminal_cmd = nil,
               log_level = "info",
               track_selection = true,
               visual_demotion_delay_ms = 50,
               diff_opts = {
                 layout = "vertical",
                 open_in_new_tab = true, -- Note: inverted from open_in_current_tab = false
-                keep_terminal_focus = false,
               },
             }, opts or {})
           end,
@@ -178,9 +176,6 @@ describe("ClaudeCode command arguments integration", function()
 
     -- Clear package cache to ensure fresh requires
     package.loaded["claudecode"] = nil
-    package.loaded["claudecode.terminal"] = nil
-    package.loaded["claudecode.terminal.snacks"] = nil
-    package.loaded["claudecode.terminal.native"] = nil
     claudecode = require("claudecode")
   end)
 
@@ -205,17 +200,13 @@ describe("ClaudeCode command arguments integration", function()
 
     _G.require = original_require
     package.loaded["claudecode"] = nil
-    package.loaded["claudecode.terminal"] = nil
-    package.loaded["claudecode.terminal.snacks"] = nil
-    package.loaded["claudecode.terminal.native"] = nil
   end)
 
   describe("with native terminal provider", function()
     it("should execute terminal command with appended arguments", function()
       claudecode.setup({
         auto_start = false,
-        terminal_cmd = "test_claude_cmd",
-        terminal = { provider = "native" },
+        terminal = { provider = "native", terminal_cmd = "test_claude_cmd" },
       })
 
       -- Find and execute the ClaudeCode command
@@ -275,8 +266,7 @@ describe("ClaudeCode command arguments integration", function()
     it("should handle empty arguments gracefully", function()
       claudecode.setup({
         auto_start = false,
-        terminal_cmd = "claude",
-        terminal = { provider = "native" },
+        terminal = { provider = "native", terminal_cmd = "claude" },
       })
 
       local command_handler
@@ -304,8 +294,7 @@ describe("ClaudeCode command arguments integration", function()
     it("should handle special characters in arguments", function()
       claudecode.setup({
         auto_start = false,
-        terminal_cmd = "claude",
-        terminal = { provider = "native" },
+        terminal = { provider = "native", terminal_cmd = "claude" },
       })
 
       local command_handler
@@ -329,8 +318,7 @@ describe("ClaudeCode command arguments integration", function()
     it("should handle very long argument strings", function()
       claudecode.setup({
         auto_start = false,
-        terminal_cmd = "claude",
-        terminal = { provider = "native" },
+        terminal = { provider = "native", terminal_cmd = "claude" },
       })
 
       local long_args = string.rep("--flag ", 50) .. "--final"
@@ -357,8 +345,7 @@ describe("ClaudeCode command arguments integration", function()
     it("should not break existing calls without arguments", function()
       claudecode.setup({
         auto_start = false,
-        terminal_cmd = "claude",
-        terminal = { provider = "native" },
+        terminal = { provider = "native", terminal_cmd = "claude" },
       })
 
       local command_handler

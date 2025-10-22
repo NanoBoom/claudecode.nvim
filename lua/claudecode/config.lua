@@ -10,12 +10,10 @@ local M = {}
 M.defaults = {
   port_range = { min = 10000, max = 65535 },
   auto_start = true,
-  terminal_cmd = nil,
-  env = {}, -- Custom environment variables for Claude terminal
+  external_terminal_cmd = nil, -- Required: command to launch Claude in external terminal (e.g., "alacritty -e %s")
+  workspace_folders_fn = nil, -- Optional: custom function to compute workspace folders
   log_level = "info",
   track_selection = true,
-  -- When true, focus Claude terminal after a successful send while connected
-  focus_after_send = false,
   visual_demotion_delay_ms = 50, -- Milliseconds to wait before demoting a visual selection
   connection_wait_delay = 600, -- Milliseconds to wait after connection before sending queued @ mentions
   connection_timeout = 10000, -- Maximum time to wait for Claude Code to connect (milliseconds)
@@ -23,8 +21,6 @@ M.defaults = {
   diff_opts = {
     layout = "vertical",
     open_in_new_tab = false, -- Open diff in a new tab (false = use current tab)
-    keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens
-    hide_terminal_in_new_tab = false, -- If true and opening in a new tab, do not show Claude terminal there
     on_new_file_reject = "keep_empty", -- "keep_empty" leaves an empty buffer; "close_window" closes the placeholder split
   },
   models = {
@@ -33,7 +29,6 @@ M.defaults = {
     { name = "Opusplan: Claude Opus 4.1 (Latest) + Sonnet 4.5 (Latest)", value = "opusplan" },
     { name = "Claude Haiku 4.5 (Latest)", value = "haiku" },
   },
-  terminal = nil, -- Will be lazy-loaded to avoid circular dependency
 }
 
 ---Validates the provided configuration table.
@@ -53,30 +48,29 @@ function M.validate(config)
 
   assert(type(config.auto_start) == "boolean", "auto_start must be a boolean")
 
-  assert(config.terminal_cmd == nil or type(config.terminal_cmd) == "string", "terminal_cmd must be nil or a string")
-
-  -- Validate terminal config
-  assert(type(config.terminal) == "table", "terminal must be a table")
-
-  -- Validate provider_opts if present
-  if config.terminal.provider_opts then
-    assert(type(config.terminal.provider_opts) == "table", "terminal.provider_opts must be a table")
-
-    -- Validate external_terminal_cmd in provider_opts
-    if config.terminal.provider_opts.external_terminal_cmd then
-      local cmd_type = type(config.terminal.provider_opts.external_terminal_cmd)
+  -- Validate external_terminal_cmd (optional but recommended)
+  if config.external_terminal_cmd ~= nil then
+    local cmd_type = type(config.external_terminal_cmd)
+    assert(
+      cmd_type == "string" or cmd_type == "function",
+      "external_terminal_cmd must be a string or function"
+    )
+    -- Only validate %s placeholder for strings
+    if cmd_type == "string" and config.external_terminal_cmd ~= "" then
       assert(
-        cmd_type == "string" or cmd_type == "function",
-        "terminal.provider_opts.external_terminal_cmd must be a string or function"
+        config.external_terminal_cmd:find("%%s"),
+        "external_terminal_cmd must contain '%s' placeholder for the Claude command"
       )
-      -- Only validate %s placeholder for strings
-      if cmd_type == "string" and config.terminal.provider_opts.external_terminal_cmd ~= "" then
-        assert(
-          config.terminal.provider_opts.external_terminal_cmd:find("%%s"),
-          "terminal.provider_opts.external_terminal_cmd must contain '%s' placeholder for the Claude command"
-        )
-      end
     end
+  end
+
+  -- Validate workspace_folders_fn (optional)
+  if config.workspace_folders_fn ~= nil then
+    local fn_type = type(config.workspace_folders_fn)
+    assert(
+      fn_type == "function",
+      "workspace_folders_fn must be a function"
+    )
   end
 
   local valid_log_levels = { "trace", "debug", "info", "warn", "error" }
@@ -90,10 +84,6 @@ function M.validate(config)
   assert(is_valid_log_level, "log_level must be one of: " .. table.concat(valid_log_levels, ", "))
 
   assert(type(config.track_selection) == "boolean", "track_selection must be a boolean")
-  -- Allow absence in direct validate() calls; apply() supplies default
-  if config.focus_after_send ~= nil then
-    assert(type(config.focus_after_send) == "boolean", "focus_after_send must be a boolean")
-  end
 
   assert(
     type(config.visual_demotion_delay_ms) == "number" and config.visual_demotion_delay_ms >= 0,
@@ -123,15 +113,6 @@ function M.validate(config)
   if config.diff_opts.open_in_new_tab ~= nil then
     assert(type(config.diff_opts.open_in_new_tab) == "boolean", "diff_opts.open_in_new_tab must be a boolean")
   end
-  if config.diff_opts.keep_terminal_focus ~= nil then
-    assert(type(config.diff_opts.keep_terminal_focus) == "boolean", "diff_opts.keep_terminal_focus must be a boolean")
-  end
-  if config.diff_opts.hide_terminal_in_new_tab ~= nil then
-    assert(
-      type(config.diff_opts.hide_terminal_in_new_tab) == "boolean",
-      "diff_opts.hide_terminal_in_new_tab must be a boolean"
-    )
-  end
   if config.diff_opts.on_new_file_reject ~= nil then
     assert(
       type(config.diff_opts.on_new_file_reject) == "string"
@@ -156,13 +137,6 @@ function M.validate(config)
     assert(type(config.diff_opts.open_in_current_tab) == "boolean", "diff_opts.open_in_current_tab must be a boolean")
   end
 
-  -- Validate env
-  assert(type(config.env) == "table", "env must be a table")
-  for key, value in pairs(config.env) do
-    assert(type(key) == "string", "env keys must be strings")
-    assert(type(value) == "string", "env values must be strings")
-  end
-
   -- Validate models
   assert(type(config.models) == "table", "models must be a table")
   assert(#config.models > 0, "models must not be empty")
@@ -182,12 +156,50 @@ end
 function M.apply(user_config)
   local config = vim.deepcopy(M.defaults)
 
-  -- Lazy-load terminal defaults to avoid circular dependency
-  if config.terminal == nil then
-    local terminal_ok, terminal_module = pcall(require, "claudecode.terminal")
-    if terminal_ok and terminal_module.defaults then
-      config.terminal = terminal_module.defaults
+  -- Detect old terminal configuration and provide migration guidance
+  if user_config and user_config.terminal then
+    local terminal = user_config.terminal
+    local old_config_keys = {
+      "split_side",
+      "split_width_percentage",
+      "provider",
+      "show_native_term_exit_tip",
+      "auto_close",
+      "snacks_win_opts",
+      "cwd",
+      "git_repo_cwd",
+      "cwd_provider",
+    }
+
+    for _, key in ipairs(old_config_keys) do
+      if terminal[key] ~= nil then
+        error(string.format([[
+claudecode.nvim: Breaking change detected!
+
+The configuration option 'terminal.%s' has been removed.
+Internal terminal providers (snacks, native) are no longer supported.
+
+Please update your configuration:
+
+require("claudecode").setup({
+  external_terminal_cmd = "alacritty -e %%s",
+})
+
+See: https://github.com/doodleEsc/claudecode.nvim#migration
+      ]], key))
+      end
     end
+
+    -- Auto-migrate external_terminal_cmd if found
+    if terminal.provider_opts and terminal.provider_opts.external_terminal_cmd then
+      user_config.external_terminal_cmd = terminal.provider_opts.external_terminal_cmd
+      -- Note: Logger might not be available yet, so we'll skip the warning
+    end
+  end
+
+  -- Detect and warn about other removed top-level options
+  if user_config and user_config.focus_after_send ~= nil then
+    -- Silently ignore - this option is no longer used
   end
 
   if user_config then

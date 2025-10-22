@@ -23,30 +23,19 @@ describe("Diff new-tab with hidden terminal", function()
       diff_opts = {
         layout = "vertical",
         open_in_new_tab = true,
-        keep_terminal_focus = false,
-        hide_terminal_in_new_tab = true,
       },
     })
 
-    -- Stub terminal provider with a valid terminal buffer (should be ignored due to hide flag)
-    local term_buf = vim.api.nvim_create_buf(false, true)
-    package.loaded["claudecode.terminal"] = {
-      get_active_terminal_bufnr = function()
-        return term_buf
-      end,
-      ensure_visible = function() end,
-    }
+    -- No terminal module setup needed anymore
   end)
 
   after_each(function()
     os.remove(test_old_file)
     os.remove(test_new_file)
-    -- Clear stub to avoid side effects
-    package.loaded["claudecode.terminal"] = nil
     diff._cleanup_all_active_diffs("test_teardown")
   end)
 
-  it("does not place a terminal split in the new tab when hidden", function()
+  it("opens diff in new tab", function()
     local params = {
       old_file_path = test_old_file,
       new_file_path = test_new_file,
@@ -67,8 +56,6 @@ describe("Diff new-tab with hidden terminal", function()
     local active = diff._get_active_diffs()
     assert.is_table(active[test_tab_name])
     assert.is_true(active[test_tab_name].created_new_tab)
-    -- Key assertion: no terminal window was created in the new tab
-    assert.is_nil(active[test_tab_name].terminal_win_in_new_tab)
 
     -- Resolve to finish the coroutine
     vim.schedule(function()

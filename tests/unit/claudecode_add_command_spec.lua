@@ -112,7 +112,6 @@ describe("ClaudeCodeAdd command", function()
     package.loaded["claudecode.logger"] = nil
     package.loaded["claudecode.diff"] = nil
     package.loaded["claudecode.visual_commands"] = nil
-    package.loaded["claudecode.terminal"] = nil
 
     claudecode = require("claudecode")
 

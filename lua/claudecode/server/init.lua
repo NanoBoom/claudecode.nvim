@@ -46,7 +46,7 @@ function M.start(config, auth_token)
 
   M.register_handlers()
 
-  tools.setup(M)
+  tools.setup(M, config)
 
   local callbacks = {
     on_message = function(client, message)
@@ -418,6 +418,26 @@ function M.get_status()
     port = M.state.port,
     client_count = tcp_server.get_client_count(M.state.server),
     clients = tcp_server.get_clients_info(M.state.server),
+  }
+end
+
+---Get debug state information for troubleshooting
+---@return table debug_info Debug state information
+function M._debug_state()
+  -- Count handlers manually to avoid vim.tbl_keys dependency in standalone Lua
+  local handler_count = 0
+  if M.state.handlers then
+    for _ in pairs(M.state.handlers) do
+      handler_count = handler_count + 1
+    end
+  end
+
+  return {
+    running = M.state.server ~= nil,
+    port = M.state.port,
+    client_count = #M.state.clients,
+    auth_enabled = M.state.auth_token ~= nil,
+    handlers_registered = handler_count
   }
 end
 

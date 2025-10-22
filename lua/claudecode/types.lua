@@ -53,6 +53,9 @@
 
 ---@alias ClaudeCodeCwdProvider fun(ctx: ClaudeCodeCwdContext): string|nil
 
+-- Workspace folders custom provider
+---@alias ClaudeCodeWorkspaceFoldersProvider fun(basename: string): string[]
+
 -- @ mention queued for Claude Code
 ---@class ClaudeCodeMention
 ---@field file_path string The absolute file path to mention
@@ -118,6 +121,7 @@
 ---@field disable_broadcast_debouncing? boolean
 ---@field enable_broadcast_debouncing_in_tests? boolean
 ---@field terminal ClaudeCodeTerminalConfig?
+---@field workspace_folders_fn? ClaudeCodeWorkspaceFoldersProvider
 
 ---@class (partial) PartialClaudeCodeConfig: ClaudeCodeConfig
 

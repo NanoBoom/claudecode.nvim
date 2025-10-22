@@ -13,8 +13,11 @@ M.ERROR_CODES = {
 M.tools = {}
 
 ---Setup the tools module
-function M.setup(server)
+---@param server table The server instance
+---@param config? table Optional configuration table
+function M.setup(server, config)
   M.server = server
+  M.config = config
 
   M.register_all()
 end
