@@ -14,7 +14,7 @@
 
 When Anthropic released Claude Code, they only supported VS Code and JetBrains. As a Neovim user, I wanted the same experience — so I reverse-engineered their extension and built this.
 
-- 🚀 **Pure Lua, Zero Dependencies** — Built entirely with `vim.loop` and Neovim built-ins
+- 🚀 **Pure Lua, Zero Dependencies** — Built entirely with `vim.uv` (Neovim's libuv bindings) and Neovim built-ins
 - 🔌 **100% Protocol Compatible** — Same WebSocket MCP implementation as official extensions
 - 🎓 **Fully Documented Protocol** — Learn how to build your own integrations ([see PROTOCOL.md](./PROTOCOL.md))
 - ⚡ **First to Market** — Beat Anthropic to releasing Neovim support
@@ -50,6 +50,8 @@ When Anthropic released Claude Code, they only supported VS Code and JetBrains. 
 ```
 
 That's it! The plugin will auto-configure everything else.
+
+> **Note**: The integration starts automatically by default (`auto_start = true`). Use `:ClaudeCodeStatus` to verify the connection. To manually control the integration, set `auto_start = false` in your config and use `:ClaudeCodeStart` / `:ClaudeCodeStop` commands.
 
 ## Requirements
 
@@ -93,7 +95,7 @@ If you have a local installation, configure the plugin with the direct path:
   "coder/claudecode.nvim",
   dependencies = { "folke/snacks.nvim" },
   opts = {
-    terminal_cmd = "~/.claude/local/claude", -- Point to local installation
+    external_terminal_cmd = "~/.claude/local/claude", -- Point to local installation
   },
   config = true,
   keys = {
@@ -150,7 +152,7 @@ Configure the plugin with the detected path:
   "coder/claudecode.nvim",
   dependencies = { "folke/snacks.nvim" },
   opts = {
-    terminal_cmd = "/path/to/your/claude", -- Use output from 'which claude'
+    external_terminal_cmd = "/path/to/your/claude", -- Use output from 'which claude'
   },
   config = true,
   keys = {
@@ -161,7 +163,7 @@ Configure the plugin with the detected path:
 
 </details>
 
-> **Note**: If Claude Code was installed globally via npm, you can use the default configuration without specifying `terminal_cmd`.
+> **Note**: If Claude Code was installed globally via npm, you can use the default configuration without specifying `external_terminal_cmd`.
 
 ## Quick Demo
 
@@ -191,13 +193,33 @@ Configure the plugin with the detected path:
 
 ## Key Commands
 
+### Core Commands
+
+- `:ClaudeCodeStart` - Start the Claude Code integration (launches server and creates lockfile)
+- `:ClaudeCodeStop` - Stop the Claude Code integration (cleanup and shutdown)
+- `:ClaudeCodeRestart` - Restart the Claude Code integration
+- `:ClaudeCodeStatus` - Show integration status (connection, port, lockfile)
+
+### Terminal Control
+
 - `:ClaudeCode` - Toggle the Claude Code terminal window
 - `:ClaudeCodeFocus` - Smart focus/toggle Claude terminal
 - `:ClaudeCodeSelectModel` - Select Claude model and open terminal with optional arguments
-- `:ClaudeCodeSend` - Send current visual selection to Claude
+
+### Context Management
+
+- `:ClaudeCodeSend` - Send current visual selection to Claude (works in visual mode or from file explorers)
+- `:ClaudeCodeTreeAdd` - Add file(s) from file explorer to Claude context (nvim-tree, neo-tree, oil, mini.files, netrw)
 - `:ClaudeCodeAdd <file-path> [start-line] [end-line]` - Add specific file to Claude context with optional line range
-- `:ClaudeCodeDiffAccept` - Accept diff changes
-- `:ClaudeCodeDiffDeny` - Reject diff changes
+
+### Diff Management
+
+- `:ClaudeCodeDiffAccept` - Accept diff changes (equivalent to `:w` in diff buffer)
+- `:ClaudeCodeDiffDeny` - Reject diff changes (equivalent to `:q` in diff buffer)
+
+### Debugging
+
+- `:ClaudeCodeDebugState` - Print internal state for debugging (server, connections, timers)
 
 ## Working with Diffs
 
@@ -219,6 +241,16 @@ The protocol uses a WebSocket-based variant of MCP (Model Context Protocol) that
 3. Sets environment variables that tell Claude where to connect
 4. Implements MCP tools that Claude can call
 
+### Auto-Reconnect
+
+The plugin includes a lockfile watcher that monitors the connection every 5 seconds (configurable via `lockfile_check_interval`). If Claude CLI exits or crashes and the lockfile is removed, the plugin automatically restarts the connection within 5-10 seconds, ensuring seamless recovery without manual intervention.
+
+### Connection Management
+
+- **Connection Timeout**: Waits up to 10 seconds (configurable) for Claude to connect after launch
+- **Queue Management**: @ mentions are queued if sent before Claude connects, with a 5-second timeout
+- **Connection Wait**: After Claude connects, waits 600ms before processing queued mentions to ensure stable connection
+
 📖 **[Read the full reverse-engineering story →](./STORY.md)**
 🔧 **[Complete protocol documentation →](./PROTOCOL.md)**
 
@@ -226,7 +258,7 @@ The protocol uses a WebSocket-based variant of MCP (Model Context Protocol) that
 
 Built with pure Lua and zero external dependencies:
 
-- **WebSocket Server** - RFC 6455 compliant implementation using `vim.loop`
+- **WebSocket Server** - RFC 6455 compliant implementation using `vim.uv` (Neovim's libuv bindings)
 - **MCP Protocol** - Full JSON-RPC 2.0 message handling
 - **Lock File System** - Enables Claude CLI discovery
 - **Selection Tracking** - Real-time context updates
@@ -245,17 +277,22 @@ For deep technical details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
     port_range = { min = 10000, max = 65535 },
     auto_start = true,
     log_level = "info", -- "trace", "debug", "info", "warn", "error"
-    terminal_cmd = nil, -- Custom terminal command (default: "claude")
-                        -- For local installations: "~/.claude/local/claude"
-                        -- For native binary: use output from 'which claude'
+    external_terminal_cmd = nil, -- Command to launch Claude (default: "claude")
+                                  -- For local installations: "~/.claude/local/claude"
+                                  -- For native binary: use output from 'which claude'
 
-    -- Send/Focus Behavior
-    -- When true, successful sends will focus the Claude terminal if already connected
-    focus_after_send = false,
+    -- Connection Management
+    connection_timeout = 10000, -- Maximum time to wait for Claude Code to connect (milliseconds)
+    connection_wait_delay = 600, -- Milliseconds to wait after connection before sending queued @ mentions
+    queue_timeout = 5000, -- Maximum time to keep @ mentions in queue (milliseconds)
+    lockfile_check_interval = 5000, -- Interval to check lockfile for auto-reconnect (milliseconds, 1-60 seconds)
 
     -- Selection Tracking
     track_selection = true,
     visual_demotion_delay_ms = 50,
+
+    -- Workspace Configuration
+    workspace_folders_fn = nil, -- Optional: custom function to compute workspace folders
 
     -- Terminal Configuration
     terminal = {
@@ -277,14 +314,18 @@ For deep technical details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
     -- Diff Integration
     diff_opts = {
-      auto_close_on_accept = true,
-      vertical_split = true,
-      open_in_current_tab = true,
-      keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens
+      layout = "vertical", -- "vertical" or "horizontal"
+      open_in_new_tab = false, -- Open diff in a new tab (false = use current tab)
+      on_new_file_reject = "keep_empty", -- "keep_empty" or "close_window"
     },
 
-    -- Workspace Folders Customization
-    workspace_folders_fn = nil, -- Optional: custom function to compute workspace folders
+    -- Model Selection
+    models = {
+      { name = "Claude Opus 4.1 (Latest)", value = "opus" },
+      { name = "Claude Sonnet 4.5 (Latest)", value = "sonnet" },
+      { name = "Opusplan: Claude Opus 4.1 (Latest) + Sonnet 4.5 (Latest)", value = "opusplan" },
+      { name = "Claude Haiku 4.5 (Latest)", value = "haiku" },
+    },
   },
   keys = {
     -- Your keymaps here
@@ -772,8 +813,12 @@ opts = {
 - **Claude not connecting?** Check `:ClaudeCodeStatus` and verify lock file exists in `~/.claude/ide/` (or `$CLAUDE_CONFIG_DIR/ide/` if `CLAUDE_CONFIG_DIR` is set)
 - **Need debug logs?** Set `log_level = "debug"` in opts
 - **Terminal issues?** Try `provider = "native"` if using snacks.nvim
-- **Local installation not working?** If you used `claude migrate-installer`, set `terminal_cmd = "~/.claude/local/claude"` in your config. Check `which claude` vs `ls ~/.claude/local/claude` to verify your installation type.
-- **Native binary installation not working?** If you used the alpha native binary installer, run `claude doctor` to verify installation health and use `which claude` to find the binary path. Set `terminal_cmd = "/path/to/claude"` with the detected path in your config.
+- **Claude disconnects frequently?** The lockfile watcher automatically reconnects within 5-10 seconds. Check logs with `log_level = "debug"` to see reconnection attempts. Adjust `lockfile_check_interval` if needed (default: 5000ms, range: 1-60 seconds).
+- **Connection timeout?** Claude Code has 10 seconds to connect by default. For slow systems, increase `connection_timeout` (default: 10000ms).
+- **@ mentions not working?** Check `:ClaudeCodeStatus` to verify connection. Mentions are queued for 5 seconds (`queue_timeout`) if sent before Claude connects.
+- **Need detailed logs?** Use `:ClaudeCodeDebugState` to see internal state (server, connections, timers, queue status).
+- **Local installation not working?** If you used `claude migrate-installer`, set `external_terminal_cmd = "~/.claude/local/claude"` in your config. Check `which claude` vs `ls ~/.claude/local/claude` to verify your installation type.
+- **Native binary installation not working?** If you used the alpha native binary installer, run `claude doctor` to verify installation health and use `which claude` to find the binary path. Set `external_terminal_cmd = "/path/to/claude"` with the detected path in your config.
 
 ## Contributing
 

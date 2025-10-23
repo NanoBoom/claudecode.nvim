@@ -36,6 +36,7 @@ M.state = {
   mention_queue = {},
   mention_timer = nil,
   connection_timer = nil,
+  lockfile_watcher_timer = nil,
 }
 
 ---Check if Claude Code is connected to WebSocket server
@@ -81,6 +82,79 @@ local function clear_mention_queue()
     M.state.mention_timer:close()
     M.state.mention_timer = nil
   end
+end
+
+---Stop the lockfile watcher timer
+---@private
+local function stop_lockfile_watcher()
+  if M.state.lockfile_watcher_timer then
+    M.state.lockfile_watcher_timer:stop()
+    M.state.lockfile_watcher_timer:close()
+    M.state.lockfile_watcher_timer = nil
+    logger.debug("watcher", "Lockfile watcher stopped")
+  end
+end
+
+---Check if lockfile exists and restart if missing
+---@private
+local function check_lockfile_and_restart()
+  -- Safety check: Only proceed if server is supposed to be running
+  if not M.state.server or not M.state.port then
+    logger.debug("watcher", "Lockfile watcher triggered but server not running, stopping watcher")
+    stop_lockfile_watcher()
+    return
+  end
+
+  local lockfile = require("claudecode.lockfile")
+  local lock_path = lockfile.lock_dir .. "/" .. M.state.port .. ".lock"
+
+  -- Check if lockfile exists
+  if vim.fn.filereadable(lock_path) == 0 then
+    logger.warn("watcher", "Lockfile missing, attempting restart: " .. lock_path)
+
+    -- Stop watcher FIRST to prevent restart loop
+    stop_lockfile_watcher()
+
+    -- Schedule restart on main thread
+    vim.schedule(function()
+      M.restart(true) -- show_notification = true
+    end)
+  end
+end
+
+---Start the lockfile watcher timer
+---@private
+local function start_lockfile_watcher()
+  -- Only start if not already running
+  if M.state.lockfile_watcher_timer then
+    logger.debug("watcher", "Lockfile watcher already running")
+    return
+  end
+
+  if not M.state.port then
+    logger.error("watcher", "Cannot start lockfile watcher: no port configured")
+    return
+  end
+
+  local interval = M.state.config.lockfile_check_interval or 5000
+
+  -- Use vim.uv (new standard) instead of vim.loop (legacy alias)
+  -- Both are identical (vim.loop == vim.uv), but vim.uv is the documented API
+  M.state.lockfile_watcher_timer = vim.uv.new_timer()
+
+  -- Timer callbacks cannot directly call vim.api functions
+  -- Must wrap with vim.schedule per vim.uv documentation
+  M.state.lockfile_watcher_timer:start(
+    interval, -- initial delay
+    interval, -- repeat interval
+    function()
+      vim.schedule(function()
+        check_lockfile_and_restart()
+      end)
+    end
+  )
+
+  logger.debug("watcher", "Lockfile watcher started (interval: " .. interval .. "ms)")
 end
 
 ---Process mentions when Claude is connected (debounced mode)
@@ -412,6 +486,9 @@ function M.start(show_startup_notification)
     logger.info("init", "Claude Code integration started on port " .. tostring(M.state.port))
   end
 
+  -- Start lockfile watcher
+  start_lockfile_watcher()
+
   return true, M.state.port
 end
 
@@ -423,6 +500,9 @@ function M.stop()
     logger.warn("init", "Claude Code integration is not running")
     return false, "Not running"
   end
+
+  -- Stop lockfile watcher
+  stop_lockfile_watcher()
 
   local lockfile = require("claudecode.lockfile")
   local lock_success, lock_error = lockfile.remove(M.state.port)

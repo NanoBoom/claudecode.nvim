@@ -18,6 +18,7 @@ M.defaults = {
   connection_wait_delay = 600, -- Milliseconds to wait after connection before sending queued @ mentions
   connection_timeout = 10000, -- Maximum time to wait for Claude Code to connect (milliseconds)
   queue_timeout = 5000, -- Maximum time to keep @ mentions in queue (milliseconds)
+  lockfile_check_interval = 5000, -- Interval to check lockfile existence (milliseconds, 5 seconds)
   diff_opts = {
     layout = "vertical",
     open_in_new_tab = false, -- Open diff in a new tab (false = use current tab)
@@ -101,6 +102,13 @@ function M.validate(config)
   )
 
   assert(type(config.queue_timeout) == "number" and config.queue_timeout > 0, "queue_timeout must be a positive number")
+
+  assert(
+    type(config.lockfile_check_interval) == "number"
+      and config.lockfile_check_interval >= 1000
+      and config.lockfile_check_interval <= 60000,
+    "lockfile_check_interval must be a number between 1000 and 60000 (1-60 seconds)"
+  )
 
   assert(type(config.diff_opts) == "table", "diff_opts must be a table")
   -- New diff options (optional validation to allow backward compatibility)
