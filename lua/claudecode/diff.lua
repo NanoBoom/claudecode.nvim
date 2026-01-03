@@ -53,6 +53,7 @@ local function find_main_editor_window()
         or filetype == "netrw"
         or filetype == "aerial"
         or filetype == "tagbar"
+        or filetype == "snacks_picker_list"
       )
     then
       is_suitable = false
@@ -66,7 +67,6 @@ local function find_main_editor_window()
   return nil
 end
 
-
 ---Create a split based on configured layout
 local function create_split()
   if config and config.diff_opts and config.diff_opts.layout == "horizontal" then
@@ -77,8 +77,6 @@ local function create_split()
     vim.cmd("rightbelow vsplit")
   end
 end
-
-
 
 ---Check if a buffer has unsaved changes (is dirty).
 ---@param file_path string The file path to check
@@ -621,7 +619,14 @@ end
 ---@param is_new_file boolean Whether this is a new file (doesn't exist yet)
 ---@param existing_buffer NvimBuf|nil Existing buffer for the file if already loaded
 ---@return DiffLayoutInfo layout Info about the created diff layout
-function M._create_diff_view_from_window(target_window, old_file_path, new_buffer, tab_name, is_new_file, existing_buffer)
+function M._create_diff_view_from_window(
+  target_window,
+  old_file_path,
+  new_buffer,
+  tab_name,
+  is_new_file,
+  existing_buffer
+)
   local original_buffer_created_by_plugin = false
 
   -- If no target window provided, create a new window in suitable location
@@ -634,7 +639,7 @@ function M._create_diff_view_from_window(target_window, old_file_path, new_buffe
     local buftype = vim.api.nvim_buf_get_option(buf, "buftype")
     local filetype = vim.api.nvim_buf_get_option(buf, "filetype")
 
-    if buftype == "terminal" or buftype == "prompt" or filetype == "neo-tree" then
+    if buftype == "terminal" or buftype == "prompt" or filetype == "neo-tree" or filetype == "snacks_picker_list" then
       create_split()
     end
 
