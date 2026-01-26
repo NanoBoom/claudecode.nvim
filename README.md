@@ -314,6 +314,7 @@ For deep technical details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
     -- Diff Integration
     diff_opts = {
+<<<<<<< HEAD
       layout = "vertical", -- "vertical" or "horizontal"
       open_in_new_tab = false, -- Open diff in a new tab (false = use current tab)
       on_new_file_reject = "keep_empty", -- "keep_empty" or "close_window"
@@ -325,6 +326,17 @@ For deep technical details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
       { name = "Claude Sonnet 4.5 (Latest)", value = "sonnet" },
       { name = "Opusplan: Claude Opus 4.1 (Latest) + Sonnet 4.5 (Latest)", value = "opusplan" },
       { name = "Claude Haiku 4.5 (Latest)", value = "haiku" },
+||||||| parent of 8f521fb (fix(diff): keep terminal focus for floating terminals (#178))
+      auto_close_on_accept = true,
+      vertical_split = true,
+      open_in_current_tab = true,
+      keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens
+=======
+      auto_close_on_accept = true,
+      vertical_split = true,
+      open_in_current_tab = true,
+      keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens (including floating terminals)
+>>>>>>> 8f521fb (fix(diff): keep terminal focus for floating terminals (#178))
     },
   },
   keys = {

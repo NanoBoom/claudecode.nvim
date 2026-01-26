@@ -67,6 +67,40 @@ local function find_main_editor_window()
   return nil
 end
 
+---Find the Claude Code terminal window to keep focus there.
+---Uses the terminal provider to get the active terminal buffer, then finds its window.
+---@return number? win_id Window ID of the Claude Code terminal window, or nil if not found
+local function find_claudecode_terminal_window()
+  local terminal_ok, terminal_module = pcall(require, "claudecode.terminal")
+  if not terminal_ok then
+    return nil
+  end
+
+  local terminal_bufnr = terminal_module.get_active_terminal_bufnr()
+  if not terminal_bufnr then
+    return nil
+  end
+
+  -- Find the window containing this buffer.
+  -- Prefer a normal split window, but fall back to a floating terminal window (e.g. Snacks position="float").
+  local floating_fallback = nil
+
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(win) == terminal_bufnr then
+      local win_config = vim.api.nvim_win_get_config(win)
+      local is_floating = win_config.relative and win_config.relative ~= ""
+
+      if is_floating then
+        floating_fallback = floating_fallback or win
+      else
+        return win
+      end
+    end
+  end
+
+  return floating_fallback
+end
+
 ---Create a split based on configured layout
 local function create_split()
   if config and config.diff_opts and config.diff_opts.layout == "horizontal" then
@@ -353,6 +387,52 @@ local function setup_new_buffer(original_win, original_buf, new_buf, old_file_pa
   vim.b[new_buf].claudecode_diff_tab_name = tab_name
   vim.b[new_buf].claudecode_diff_new_win = new_win
   vim.b[new_buf].claudecode_diff_target_win = target_win_for_meta
+
+  if config and config.diff_opts and config.diff_opts.keep_terminal_focus then
+    vim.schedule(function()
+      if terminal_win_in_new_tab and vim.api.nvim_win_is_valid(terminal_win_in_new_tab) then
+        vim.api.nvim_set_current_win(terminal_win_in_new_tab)
+        vim.cmd("startinsert")
+        return
+      end
+
+      local terminal_win = find_claudecode_terminal_window()
+      if terminal_win then
+        vim.api.nvim_set_current_win(terminal_win)
+        vim.cmd("startinsert")
+      end
+    end)
+  end
+
+  if terminal_win_in_new_tab and vim.api.nvim_win_is_valid(terminal_win_in_new_tab) then
+    local terminal_config = config.terminal or {}
+    local split_width = terminal_config.split_width_percentage or 0.30
+    local total_width = vim.o.columns
+    local terminal_width = math.floor(total_width * split_width)
+    vim.api.nvim_win_set_width(terminal_win_in_new_tab, terminal_width)
+  else
+    local terminal_win = find_claudecode_terminal_window()
+    if terminal_win and vim.api.nvim_win_is_valid(terminal_win) then
+      local current_tab = vim.api.nvim_get_current_tabpage()
+      local term_tab = nil
+      pcall(function()
+        term_tab = vim.api.nvim_win_get_tabpage(terminal_win)
+      end)
+      if term_tab == current_tab then
+        local win_config = vim.api.nvim_win_get_config(terminal_win)
+        local is_floating = win_config.relative and win_config.relative ~= ""
+
+        -- Only resize split terminals. Floating terminals control their own sizing.
+        if not is_floating then
+          local terminal_config = config.terminal or {}
+          local split_width = terminal_config.split_width_percentage or 0.30
+          local total_width = vim.o.columns
+          local terminal_width = math.floor(total_width * split_width)
+          pcall(vim.api.nvim_win_set_width, terminal_win, terminal_width)
+        end
+      end
+    end
+  end
 
   return new_win
 end
@@ -721,6 +801,27 @@ function M._cleanup_diff_state(tab_name, reason)
         pcall(vim.cmd, "tabclose " .. vim.api.nvim_tabpage_get_number(current_tab))
       end
     end
+
+    -- Optionally ensure the Claude terminal remains visible in the original tab
+    local terminal_ok, terminal_module = pcall(require, "claudecode.terminal")
+    if terminal_ok and diff_data.had_terminal_in_original then
+      pcall(terminal_module.ensure_visible)
+      -- And restore its configured width if it is visible.
+      -- (We intentionally do not resize floating terminals.)
+      local terminal_win = find_claudecode_terminal_window()
+      if terminal_win and vim.api.nvim_win_is_valid(terminal_win) then
+        local win_config = vim.api.nvim_win_get_config(terminal_win)
+        local is_floating = win_config.relative and win_config.relative ~= ""
+
+        if not is_floating then
+          local terminal_config = config.terminal or {}
+          local split_width = terminal_config.split_width_percentage or 0.30
+          local total_width = vim.o.columns
+          local terminal_width = math.floor(total_width * split_width)
+          pcall(vim.api.nvim_win_set_width, terminal_win, terminal_width)
+        end
+      end
+    end
   else
     -- Close new diff window if still open (only if not in a new tab)
     if diff_data.new_window and vim.api.nvim_win_is_valid(diff_data.new_window) then
@@ -732,6 +833,22 @@ function M._cleanup_diff_state(tab_name, reason)
       vim.api.nvim_win_call(diff_data.target_window, function()
         vim.cmd("diffoff")
       end)
+    end
+
+    -- After closing the diff in the same tab, restore terminal width if visible.
+    -- (We intentionally do not resize floating terminals.)
+    local terminal_win = find_claudecode_terminal_window()
+    if terminal_win and vim.api.nvim_win_is_valid(terminal_win) then
+      local win_config = vim.api.nvim_win_get_config(terminal_win)
+      local is_floating = win_config.relative and win_config.relative ~= ""
+
+      if not is_floating then
+        local terminal_config = config.terminal or {}
+        local split_width = terminal_config.split_width_percentage or 0.30
+        local total_width = vim.o.columns
+        local terminal_width = math.floor(total_width * split_width)
+        pcall(vim.api.nvim_win_set_width, terminal_win, terminal_width)
+      end
     end
   end
 

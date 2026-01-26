@@ -22,6 +22,8 @@ M.defaults = {
   diff_opts = {
     layout = "vertical",
     open_in_new_tab = false, -- Open diff in a new tab (false = use current tab)
+    keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens (including floating terminals)
+    hide_terminal_in_new_tab = false, -- If true and opening in a new tab, do not show Claude terminal there
     on_new_file_reject = "keep_empty", -- "keep_empty" leaves an empty buffer; "close_window" closes the placeholder split
   },
   models = {
@@ -52,10 +54,7 @@ function M.validate(config)
   -- Validate external_terminal_cmd (optional but recommended)
   if config.external_terminal_cmd ~= nil then
     local cmd_type = type(config.external_terminal_cmd)
-    assert(
-      cmd_type == "string" or cmd_type == "function",
-      "external_terminal_cmd must be a string or function"
-    )
+    assert(cmd_type == "string" or cmd_type == "function", "external_terminal_cmd must be a string or function")
     -- Only validate %s placeholder for strings
     if cmd_type == "string" and config.external_terminal_cmd ~= "" then
       assert(
@@ -68,10 +67,7 @@ function M.validate(config)
   -- Validate workspace_folders_fn (optional)
   if config.workspace_folders_fn ~= nil then
     local fn_type = type(config.workspace_folders_fn)
-    assert(
-      fn_type == "function",
-      "workspace_folders_fn must be a function"
-    )
+    assert(fn_type == "function", "workspace_folders_fn must be a function")
   end
 
   local valid_log_levels = { "trace", "debug", "info", "warn", "error" }
@@ -181,7 +177,8 @@ function M.apply(user_config)
 
     for _, key in ipairs(old_config_keys) do
       if terminal[key] ~= nil then
-        error(string.format([[
+        error(string.format(
+          [[
 claudecode.nvim: Breaking change detected!
 
 The configuration option 'terminal.%s' has been removed.
@@ -194,7 +191,9 @@ require("claudecode").setup({
 })
 
 See: https://github.com/doodleEsc/claudecode.nvim#migration
-      ]], key))
+      ]],
+          key
+        ))
       end
     end
 
