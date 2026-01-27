@@ -65,3 +65,5 @@ luacov.stats.out
 !.claude/settings.json
 !.claude/hooks/
 .mcp.json
+TODO/
+hack/
