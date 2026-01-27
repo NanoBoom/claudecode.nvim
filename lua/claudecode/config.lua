@@ -27,9 +27,9 @@ M.defaults = {
     on_new_file_reject = "keep_empty", -- "keep_empty" leaves an empty buffer; "close_window" closes the placeholder split
   },
   models = {
-    { name = "Claude Opus 4.1 (Latest)", value = "opus" },
+    { name = "Claude Opus 4.5 (Latest)", value = "opus" },
     { name = "Claude Sonnet 4.5 (Latest)", value = "sonnet" },
-    { name = "Opusplan: Claude Opus 4.1 (Latest) + Sonnet 4.5 (Latest)", value = "opusplan" },
+    { name = "Opusplan: Claude Opus 4.5 (Latest) + Sonnet 4.5 (Latest)", value = "opusplan" },
     { name = "Claude Haiku 4.5 (Latest)", value = "haiku" },
   },
 }
