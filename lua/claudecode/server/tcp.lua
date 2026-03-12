@@ -125,7 +125,15 @@ function M._handle_new_connection(server)
   client_tcp:read_start(function(err, data)
     if err then
       local error_msg = "Client read error: " .. err
-      server.on_error(error_msg)
+      -- ECONNRESET / EPIPE / ECONNABORTED mean the remote peer closed the
+      -- connection abruptly (e.g. the Claude Code process was killed or
+      -- exited). This is functionally identical to EOF and is not an error
+      -- worth surfacing at ERROR level. Only truly unexpected errors (e.g.
+      -- ENOMEM) should be routed through on_error.
+      local is_normal_disconnect = err:find("ECONNRESET") or err:find("EPIPE") or err:find("ECONNABORTED")
+      if not is_normal_disconnect then
+        server.on_error(error_msg)
+      end
       M._disconnect_client(server, client, 1006, error_msg)
       return
     end
